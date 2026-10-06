@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Build an SD-card-ready NextUI Local Link GBA.pak archive.
+"""Build an SD-card-ready NextUI Local Link Tool Pak archive.
 
-The archive intentionally overrides the normal GBA tag instead of inventing a new ROM
-folder tag. Users can therefore keep ROMs under `Roms/Game Boy Advance (GBA)`.
+The archive installs only under `Tools/<platform>/Local Link.pak`. It does not replace
+NextUI's normal `Emus/<platform>/GBA.pak`, so ordinary GBA launching remains on gpSP.
 
 Usage:
     python3 scripts/package_pak.py \
@@ -15,7 +15,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
 import stat
 import tempfile
@@ -39,7 +38,7 @@ def main() -> int:
     args = parser.parse_args()
 
     project = Path(__file__).resolve().parents[1]
-    launcher = project / "pak/GBA.pak/launch.sh"
+    launcher = project / "pak/Local Link.pak/launch.sh"
     if not launcher.is_file():
         raise SystemExit(f"missing launcher: {launcher}")
     if not args.core.is_file():
@@ -49,20 +48,19 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="local-link-pak-") as tmp:
         root = Path(tmp)
-        pak = root / "Emus" / args.platform / "GBA.pak"
+        pak = root / "Tools" / args.platform / "Local Link.pak"
         pak.mkdir(parents=True)
 
         copy_executable(launcher, pak / "launch.sh")
         copy_executable(args.minarch, pak / "minarch-local-link.elf")
         shutil.copy2(args.core, pak / "mgba_local_link_libretro.so")
 
-        # Include a small marker so testers can tell which override is installed
-        # without relying on timestamps or binary strings.
         (pak / "LOCAL_LINK.txt").write_text(
-            "NextUI Local Link GBA override\n"
+            "NextUI Local Link Tool Pak\n"
             f"platform={args.platform}\n"
             "Install by extracting at the SD-card root.\n"
-            "Remove Emus/<platform>/GBA.pak to return to NextUI's built-in GBA Pak.\n"
+            "Normal Emus/<platform>/GBA.pak is not modified.\n"
+            "Launch Local Link from Tools and choose Player 1.\n"
         )
 
         with zipfile.ZipFile(args.output, "w", zipfile.ZIP_DEFLATED) as archive:
