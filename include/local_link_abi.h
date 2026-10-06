@@ -31,6 +31,11 @@ enum LocalLinkCapability {
     LOCAL_LINK_CAP_STICKY_CABLE_ID   = 1u << 5,
 };
 
+/* ABI v1 originally called bit 4 FIXED_PLAYER_ID. Keep the source alias so
+ * older core code still builds; its precise v1 meaning is now documented as a
+ * fixed Local Link slot, not a promise about mGBA's internal cable ID. */
+#define LOCAL_LINK_CAP_FIXED_PLAYER_ID LOCAL_LINK_CAP_FIXED_SLOT_ID
+
 typedef unsigned (*local_link_get_abi_version_t)(void);
 typedef uint64_t (*local_link_get_capabilities_t)(void);
 typedef uint32_t (*local_link_get_loaded_mask_t)(void);
