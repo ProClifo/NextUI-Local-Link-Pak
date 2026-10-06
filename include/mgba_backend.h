@@ -19,12 +19,12 @@ typedef struct {
     size_t pitch_bytes;
 } LLVideoFrame;
 
-LLMgaBackend *ll_mgba_backend_create(void);
-void ll_mgba_backend_destroy(LLMgaBackend *backend);
+LLMgbaBackend *ll_mgba_backend_create(void);
+void ll_mgba_backend_destroy(LLMgbaBackend *backend);
 
 const LLBackend *ll_mgba_backend_interface(void);
 
-LLResult ll_mgba_backend_run_frame(LLMgaBackend *backend,
+LLResult ll_mgba_backend_run_frame(LLMgbaBackend *backend,
                                    const uint32_t keys[LL_MAX_PLAYERS]);
 LLResult ll_mgba_backend_get_frame(const LLMgbaBackend *backend,
                                    unsigned player_id,
