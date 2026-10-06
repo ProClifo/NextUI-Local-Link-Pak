@@ -15,8 +15,11 @@ int LLMinarch_switchTo(unsigned slot);
 int LLMinarch_switchNext(void);
 int LLMinarch_saveSlot(unsigned slot);
 int LLMinarch_saveAll(void);
+int LLMinarch_saveStateSlot(unsigned slot, int state_slot);
+int LLMinarch_loadStateSlot(unsigned slot, int state_slot);
 int LLMinarch_remove(unsigned slot);
 int LLMinarch_removeActive(void);
+int LLMinarch_saveAndRemoveActive(void);
 
 /* Menu callbacks used by Options > Emulator. */
 int LLMinarch_menuAdd(struct MenuList *list, int index);
