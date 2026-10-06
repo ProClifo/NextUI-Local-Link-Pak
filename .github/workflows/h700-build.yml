@@ -30,12 +30,15 @@ jobs:
           git clone --depth 1 https://github.com/LoveRetro/NextUI.git /tmp/NextUI
           python3 scripts/apply_nextui.py /tmp/NextUI
           git -C /tmp/NextUI diff --check
+          printf 'local-link-test\n' > /tmp/NextUI/workspace/hash.txt
 
       - name: Build Local-Link MinArch for h700
         shell: bash
         run: |
           set -euxo pipefail
-          make -C /tmp/NextUI/workspace/all/minarch PLATFORM=h700 -j2
+          # MinArch's dependency bootstrap clones/builds libretro-common and is
+          # not safe to start in parallel on a completely clean checkout.
+          make -C /tmp/NextUI/workspace/all/minarch PLATFORM=h700 -j1
           test -f /tmp/NextUI/workspace/all/minarch/build/h700/minarch.elf
           file /tmp/NextUI/workspace/all/minarch/build/h700/minarch.elf
 
