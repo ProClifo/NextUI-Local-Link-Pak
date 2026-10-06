@@ -56,7 +56,7 @@ int LLMinarch_supported(void) {
     uint64_t required = LOCAL_LINK_CAP_ADD_REMOVE |
                         LOCAL_LINK_CAP_ACTIVE_INSTANCE |
                         LOCAL_LINK_CAP_PER_PLAYER_RAM |
-                        LOCAL_LINK_CAP_FIXED_PLAYER_ID;
+                        LOCAL_LINK_CAP_FIXED_SLOT_ID;
     if ((caps & required) != required) return 0;
     remember_primary_name();
     return 1;
