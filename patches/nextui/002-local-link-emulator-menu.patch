@@ -1,0 +1,66 @@
+diff --git a/workspace/all/minarch/ma_frontend_opts.c b/workspace/all/minarch/ma_frontend_opts.c
+--- a/workspace/all/minarch/ma_frontend_opts.c
++++ b/workspace/all/minarch/ma_frontend_opts.c
+@@
+ #include "notification.h"
++#include "minarch_local_link.h"
+@@
+ int OptionEmulator_openMenu(MenuList* list, int index) {
+@@
+ 	int cat_count = 0;
+@@
+ 	if (list->category == NULL && config.core.categories) {
+ 		while (config.core.categories[cat_count].key) {
+ 			cat_count++;
+ 		}
+ 	}
++
++	/* Local Link is an action, not a persistent core option. Keep it out of
++	 * config.core and inject it only at the root Emulator menu. */
++	int local_link_count = 0;
++	unsigned local_link_instances = 0;
++	if (list->category == NULL && LLMinarch_supported()) {
++		local_link_instances = LLMinarch_instanceCount();
++		if (local_link_instances < 4) local_link_count++; /* Add Instance */
++		if (local_link_instances > 1) local_link_count += 2; /* Switch + Remove */
++	}
+ 
+-	OptionEmulator_menu.items = calloc(cat_count + config.core.enabled_count + 1, sizeof(MenuItem));
++	OptionEmulator_menu.items = calloc(local_link_count + cat_count + config.core.enabled_count + 1, sizeof(MenuItem));
++
++	int menu_offset = 0;
++	if (local_link_count) {
++		if (local_link_instances < 4) {
++			MenuItem *item = &OptionEmulator_menu.items[menu_offset++];
++			item->key = "local_link_add";
++			item->name = "Add Instance";
++			item->desc = "Link another GBA game on this device.";
++			item->on_confirm = LLMinarch_menuAdd;
++		}
++		if (local_link_instances > 1) {
++			MenuItem *switch_item = &OptionEmulator_menu.items[menu_offset++];
++			switch_item->key = "local_link_switch";
++			switch_item->name = "Switch Instance";
++			switch_item->desc = "Show and control the next linked GBA.";
++			switch_item->on_confirm = LLMinarch_menuSwitch;
++
++			MenuItem *remove_item = &OptionEmulator_menu.items[menu_offset++];
++			remove_item->key = "local_link_remove";
++			remove_item->name = "Remove Instance";
++			remove_item->desc = "Disconnect the currently active GBA.";
++			remove_item->on_confirm = LLMinarch_menuRemove;
++		}
++	}
+ 
+ 	for (int i=0; i<cat_count; i++) {
+ 		OptionCategory *cat = &config.core.categories[i];
+-		MenuItem *item = &OptionEmulator_menu.items[i];
++		MenuItem *item = &OptionEmulator_menu.items[menu_offset + i];
+@@
+ 	for (int i=0; i<config.core.enabled_count; i++) {
+ 		Option *option = config.core.enabled_options[i];
+-		MenuItem *item = &OptionEmulator_menu.items[cat_count + i];
++		MenuItem *item = &OptionEmulator_menu.items[menu_offset + cat_count + i];
+@@
+-	if (cat_count || config.core.enabled_count) {
++	if (local_link_count || cat_count || config.core.enabled_count) {

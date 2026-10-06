@@ -1,8 +1,14 @@
 #include "ma_internal.h"
+#include "ma_frontend_opts.h"
 #include "minarch_local_link.h"
 #include "local_link_abi.h"
 
+#include <dirent.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+#include <sys/stat.h>
 
 static int abi_valid(void) {
     return core.local_link_get_abi_version &&
@@ -35,6 +41,16 @@ unsigned LLMinarch_activeSlot(void) {
     return slot < LOCAL_LINK_MAX_PLAYERS ? slot : 0;
 }
 
+unsigned LLMinarch_instanceCount(void) {
+    uint32_t mask = LLMinarch_loadedMask();
+    unsigned count = 0;
+    while (mask) {
+        count += mask & 1u;
+        mask >>= 1;
+    }
+    return count;
+}
+
 int LLMinarch_addPath(unsigned slot, const char *path) {
     if (!LLMinarch_supported() || !path || !*path || slot >= LOCAL_LINK_MAX_PLAYERS) return 0;
     if (LLMinarch_loadedMask() & (1u << slot)) return 0;
@@ -47,7 +63,7 @@ int LLMinarch_addPath(unsigned slot, const char *path) {
 
 int LLMinarch_addNextPath(const char *path, unsigned *slot_out) {
     uint32_t mask = LLMinarch_loadedMask();
-    /* Slot 0 is the game MinArch launched normally. Fill P2-P4 in order. */
+    /* Slot 0 is P1, loaded by normal retro_load_game(). Fill P2-P4 in order. */
     for (unsigned slot = 1; slot < LOCAL_LINK_MAX_PLAYERS; ++slot) {
         if (!(mask & (1u << slot))) {
             if (!LLMinarch_addPath(slot, path)) return 0;
@@ -84,4 +100,168 @@ int LLMinarch_remove(unsigned slot) {
 
 int LLMinarch_removeActive(void) {
     return LLMinarch_remove(LLMinarch_activeSlot());
+}
+
+struct PickerEntry {
+    char *name;
+    char *path;
+};
+
+static struct PickerEntry *picker_entries;
+static size_t picker_count;
+
+static int picker_compare(const void *a, const void *b) {
+    const struct PickerEntry *ea = a;
+    const struct PickerEntry *eb = b;
+    return strcasecmp(ea->name, eb->name);
+}
+
+static int is_gba_rom(const char *name) {
+    const char *ext = strrchr(name, '.');
+    return ext && strcasecmp(ext, ".gba") == 0;
+}
+
+static char *display_name(const char *filename) {
+    char *name = strdup(filename);
+    if (!name) return NULL;
+    char *ext = strrchr(name, '.');
+    if (ext) *ext = '\0';
+    return name;
+}
+
+static void picker_clear(void) {
+    for (size_t i = 0; i < picker_count; ++i) {
+        free(picker_entries[i].name);
+        free(picker_entries[i].path);
+    }
+    free(picker_entries);
+    picker_entries = NULL;
+    picker_count = 0;
+}
+
+static int picker_add(const char *directory, const char *filename) {
+    struct PickerEntry *next = realloc(picker_entries,
+        (picker_count + 1) * sizeof(*picker_entries));
+    if (!next) return 0;
+    picker_entries = next;
+
+    struct PickerEntry *entry = &picker_entries[picker_count];
+    memset(entry, 0, sizeof(*entry));
+    entry->name = display_name(filename);
+    if (!entry->name) return 0;
+
+    size_t len = strlen(directory) + 1 + strlen(filename) + 1;
+    entry->path = malloc(len);
+    if (!entry->path) {
+        free(entry->name);
+        entry->name = NULL;
+        return 0;
+    }
+    snprintf(entry->path, len, "%s/%s", directory, filename);
+    ++picker_count;
+    return 1;
+}
+
+static int picker_confirm(MenuList *list, int index) {
+    (void) list;
+    if (index < 0 || (size_t) index >= picker_count) return MENU_CALLBACK_NOP;
+
+    unsigned slot = 0;
+    if (!LLMinarch_addNextPath(picker_entries[index].path, &slot)) {
+        Menu_message("Could not add this GBA instance.", (char*[]){ "B", "BACK", NULL });
+        return MENU_CALLBACK_NOP;
+    }
+
+    char message[64];
+    snprintf(message, sizeof(message), "Added as Player %u.", slot + 1);
+    Menu_message(message, (char*[]){ "A", "OK", NULL });
+    return MENU_CALLBACK_EXIT;
+}
+
+int LLMinarch_menuAdd(MenuList *parent, int index) {
+    (void) parent;
+    (void) index;
+
+    if (!LLMinarch_supported()) return MENU_CALLBACK_NOP;
+    if (LLMinarch_instanceCount() >= LOCAL_LINK_MAX_PLAYERS) {
+        Menu_message("All four GBA link slots are in use.", (char*[]){ "B", "BACK", NULL });
+        return MENU_CALLBACK_NOP;
+    }
+
+    char directory[MAX_PATH];
+    snprintf(directory, sizeof(directory), "%s", game.path);
+    char *slash = strrchr(directory, '/');
+    if (!slash) {
+        Menu_message("Could not find the GBA ROM folder.", (char*[]){ "B", "BACK", NULL });
+        return MENU_CALLBACK_NOP;
+    }
+    *slash = '\0';
+
+    picker_clear();
+    DIR *dir = opendir(directory);
+    if (!dir) {
+        Menu_message("Could not open the GBA ROM folder.", (char*[]){ "B", "BACK", NULL });
+        return MENU_CALLBACK_NOP;
+    }
+
+    struct dirent *ent;
+    while ((ent = readdir(dir)) != NULL) {
+        if (ent->d_name[0] == '.' || !is_gba_rom(ent->d_name)) continue;
+        if (!picker_add(directory, ent->d_name)) break;
+    }
+    closedir(dir);
+
+    if (!picker_count) {
+        picker_clear();
+        Menu_message("No .gba files found in this ROM folder.", (char*[]){ "B", "BACK", NULL });
+        return MENU_CALLBACK_NOP;
+    }
+
+    qsort(picker_entries, picker_count, sizeof(*picker_entries), picker_compare);
+
+    MenuItem *items = calloc(picker_count + 1, sizeof(*items));
+    if (!items) {
+        picker_clear();
+        return MENU_CALLBACK_NOP;
+    }
+    for (size_t i = 0; i < picker_count; ++i) {
+        items[i].name = picker_entries[i].name;
+        items[i].desc = "Add this game to the local GBA link session.";
+        items[i].on_confirm = picker_confirm;
+    }
+
+    MenuList picker = {
+        .type = MENU_LIST,
+        .desc = "Choose a GBA game to link.",
+        .items = items,
+    };
+    Menu_options(&picker);
+
+    free(items);
+    picker_clear();
+    return MENU_CALLBACK_NOP;
+}
+
+int LLMinarch_menuSwitch(MenuList *list, int index) {
+    (void) list;
+    (void) index;
+    if (LLMinarch_instanceCount() < 2) return MENU_CALLBACK_NOP;
+    return LLMinarch_switchNext() ? MENU_CALLBACK_EXIT : MENU_CALLBACK_NOP;
+}
+
+int LLMinarch_menuRemove(MenuList *list, int index) {
+    (void) list;
+    (void) index;
+    if (LLMinarch_instanceCount() < 2) return MENU_CALLBACK_NOP;
+
+    unsigned player = LLMinarch_activeSlot() + 1;
+    if (!LLMinarch_removeActive()) {
+        Menu_message("Could not remove the active instance.", (char*[]){ "B", "BACK", NULL });
+        return MENU_CALLBACK_NOP;
+    }
+
+    char message[64];
+    snprintf(message, sizeof(message), "Player %u disconnected.", player);
+    Menu_message(message, (char*[]){ "A", "OK", NULL });
+    return MENU_CALLBACK_EXIT;
 }
