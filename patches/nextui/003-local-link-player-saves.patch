@@ -1,0 +1,123 @@
+diff --git a/workspace/all/minarch/ma_saves.h b/workspace/all/minarch/ma_saves.h
+--- a/workspace/all/minarch/ma_saves.h
++++ b/workspace/all/minarch/ma_saves.h
+@@
+ #pragma once
++
++#include <stddef.h>
+@@
+ void SRAM_read(void);
+ void SRAM_write(void);
++int SRAM_readNamed(const char* alt_name, void* sram, size_t sram_size);
++int SRAM_writeNamed(const char* alt_name, const void* sram, size_t sram_size);
+ void RTC_read(void);
+ void RTC_write(void);
+diff --git a/workspace/all/minarch/ma_saves.c b/workspace/all/minarch/ma_saves.c
+--- a/workspace/all/minarch/ma_saves.c
++++ b/workspace/all/minarch/ma_saves.c
+@@
+-static void SRAM_getPath(char* filename) {
++static void SRAM_getPathForName(const char* alt_name, char* filename) {
+ 	char work_name[MAX_PATH];
+ 
+ 	if (CFG_getSaveFormat() == SAVE_FORMAT_SRM
+ 	 || CFG_getSaveFormat() == SAVE_FORMAT_SRM_UNCOMPRESSED) {
+-		strcpy(work_name, game.alt_name);
++		strcpy(work_name, alt_name);
+ 		formatSavePath(work_name, filename, ".srm");
+ 	}
+ 	else if (CFG_getSaveFormat() == SAVE_FORMAT_GEN) {
+-		strcpy(work_name, game.alt_name);
++		strcpy(work_name, alt_name);
+ 		formatSavePath(work_name, filename, ".sav");
+ 	}
+ 	else {
+-		sprintf(filename, "%s/%s.sav", core.saves_dir, game.alt_name);
++		sprintf(filename, "%s/%s.sav", core.saves_dir, alt_name);
+ 	}
+ 
+ 	LOG_info("SRAM_getPath %s\n", filename);
+ }
++
++static void SRAM_getPath(char* filename) {
++	SRAM_getPathForName(game.alt_name, filename);
++}
++
++int SRAM_readNamed(const char* alt_name, void* sram, size_t sram_size) {
++	if (!alt_name || !*alt_name || !sram || !sram_size) return 0;
++
++	char filename[MAX_PATH];
++	SRAM_getPathForName(alt_name, filename);
++	printf("sav path (read named): %s\n", filename);
++
++#ifdef HAS_SRM
++	rzipstream_t* sram_file = rzipstream_open(filename, RETRO_VFS_FILE_ACCESS_READ);
++	if (!sram_file) return 0;
++	int64_t bytes = rzipstream_read(sram_file, sram, sram_size);
++	rzipstream_close(sram_file);
++	if (bytes < 0) {
++		LOG_error("rzipstream: Error reading named SRAM data\n");
++		return 0;
++	}
++	return bytes > 0;
++#else
++	FILE* sram_file = fopen(filename, "r");
++	if (!sram_file) return 0;
++	size_t bytes = fread(sram, 1, sram_size, sram_file);
++	fclose(sram_file);
++	if (!bytes) LOG_error("Error reading named SRAM data\n");
++	return bytes > 0;
++#endif
++}
++
++int SRAM_writeNamed(const char* alt_name, const void* sram, size_t sram_size) {
++	if (!alt_name || !*alt_name || !sram || !sram_size) return 0;
++
++	char filename[MAX_PATH];
++	SRAM_getPathForName(alt_name, filename);
++	printf("sav path (write named): %s\n", filename);
++
++	int ok = 0;
++#ifdef HAS_SRM
++	if (CFG_getSaveFormat() == SAVE_FORMAT_SRM) {
++		ok = rzipstream_write_file(filename, sram, sram_size);
++	}
++	else {
++		ok = filestream_write_file(filename, sram, sram_size);
++	}
++#else
++	FILE* sram_file = fopen(filename, "w");
++	if (sram_file) {
++		ok = fwrite(sram, 1, sram_size, sram_file) == sram_size;
++		fclose(sram_file);
++	}
++#endif
++	if (!ok) LOG_error("Error writing named SRAM data: %s\n", filename);
++	sync();
++	return ok;
++}
+ 
+ void SRAM_read(void) {
+ 	size_t sram_size = core.get_memory_size(RETRO_MEMORY_SAVE_RAM);
+@@
+ void SRAM_write(void) {
+ 	size_t sram_size = core.get_memory_size(RETRO_MEMORY_SAVE_RAM);
+diff --git a/workspace/all/minarch/ma_core.c b/workspace/all/minarch/ma_core.c
+--- a/workspace/all/minarch/ma_core.c
++++ b/workspace/all/minarch/ma_core.c
+@@
+ #include "ma_cheats.h"
+ #include "ma_core.h"
++#include "minarch_local_link.h"
+@@
+ void Core_quit(void) {
+ 	if (core.initialized) {
+-		SRAM_write();
++		/* Standard SRAM_write() uses game.alt_name (P1) but retro_get_memory_data()
++		 * points at whichever Local Link slot is active. Persist every occupied
++		 * slot under its own ROM name instead. */
++		if (LLMinarch_supported()) LLMinarch_saveAll();
++		else SRAM_write();
+ 		Cheats_free();
+ 		RTC_write();
+ 		core.unload_game();

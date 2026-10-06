@@ -1,5 +1,6 @@
 #include "ma_internal.h"
 #include "ma_frontend_opts.h"
+#include "ma_saves.h"
 #include "minarch_local_link.h"
 #include "local_link_abi.h"
 
@@ -10,6 +11,24 @@
 #include <strings.h>
 #include <sys/stat.h>
 
+/* The basename/alt-name used by NextUI's normal SRAM naming rules for each
+ * fixed Local Link slot. P1 is populated from game.alt_name; P2-P4 are the
+ * selected ROM basenames. */
+static char slot_save_name[LOCAL_LINK_MAX_PLAYERS][MAX_PATH];
+
+static void remember_primary_name(void) {
+    if (!slot_save_name[0][0] && game.alt_name[0]) {
+        snprintf(slot_save_name[0], sizeof(slot_save_name[0]), "%s", game.alt_name);
+    }
+}
+
+static void remember_path_name(unsigned slot, const char *path) {
+    if (slot >= LOCAL_LINK_MAX_PLAYERS || !path) return;
+    const char *name = strrchr(path, '/');
+    name = name ? name + 1 : path;
+    snprintf(slot_save_name[slot], sizeof(slot_save_name[slot]), "%s", name);
+}
+
 static int abi_valid(void) {
     return core.local_link_get_abi_version &&
            core.local_link_get_capabilities &&
@@ -18,6 +37,8 @@ static int abi_valid(void) {
            core.local_link_set_active_instance &&
            core.local_link_add_instance &&
            core.local_link_remove_instance &&
+           core.local_link_get_memory_data &&
+           core.local_link_get_memory_size &&
            core.local_link_get_abi_version() == LOCAL_LINK_ABI_VERSION;
 }
 
@@ -26,8 +47,11 @@ int LLMinarch_supported(void) {
     uint64_t caps = core.local_link_get_capabilities();
     uint64_t required = LOCAL_LINK_CAP_ADD_REMOVE |
                         LOCAL_LINK_CAP_ACTIVE_INSTANCE |
+                        LOCAL_LINK_CAP_PER_PLAYER_RAM |
                         LOCAL_LINK_CAP_FIXED_PLAYER_ID;
-    return (caps & required) == required;
+    if ((caps & required) != required) return 0;
+    remember_primary_name();
+    return 1;
 }
 
 uint32_t LLMinarch_loadedMask(void) {
@@ -51,6 +75,30 @@ unsigned LLMinarch_instanceCount(void) {
     return count;
 }
 
+int LLMinarch_saveSlot(unsigned slot) {
+    if (!LLMinarch_supported() || slot >= LOCAL_LINK_MAX_PLAYERS) return 0;
+    if (!(LLMinarch_loadedMask() & (1u << slot))) return 0;
+
+    if (slot == 0) remember_primary_name();
+    if (!slot_save_name[slot][0]) return 0;
+
+    void *sram = core.local_link_get_memory_data(slot, RETRO_MEMORY_SAVE_RAM);
+    size_t size = core.local_link_get_memory_size(slot, RETRO_MEMORY_SAVE_RAM);
+    if (!sram || !size) return 1; /* game has no battery-backed RAM */
+
+    return SRAM_writeNamed(slot_save_name[slot], sram, size);
+}
+
+int LLMinarch_saveAll(void) {
+    if (!LLMinarch_supported()) return 0;
+    uint32_t mask = LLMinarch_loadedMask();
+    int ok = 1;
+    for (unsigned slot = 0; slot < LOCAL_LINK_MAX_PLAYERS; ++slot) {
+        if ((mask & (1u << slot)) && !LLMinarch_saveSlot(slot)) ok = 0;
+    }
+    return ok;
+}
+
 int LLMinarch_addPath(unsigned slot, const char *path) {
     if (!LLMinarch_supported() || !path || !*path || slot >= LOCAL_LINK_MAX_PLAYERS) return 0;
     if (LLMinarch_loadedMask() & (1u << slot)) return 0;
@@ -58,7 +106,18 @@ int LLMinarch_addPath(unsigned slot, const char *path) {
     struct retro_game_info game_info;
     memset(&game_info, 0, sizeof(game_info));
     game_info.path = path;
-    return core.local_link_add_instance(slot, &game_info) ? 1 : 0;
+
+    if (!core.local_link_add_instance(slot, &game_info)) return 0;
+
+    remember_path_name(slot, path);
+    void *sram = core.local_link_get_memory_data(slot, RETRO_MEMORY_SAVE_RAM);
+    size_t size = core.local_link_get_memory_size(slot, RETRO_MEMORY_SAVE_RAM);
+    if (sram && size) {
+        /* Missing files are normal for a new game, so SRAM_readNamed returning
+         * false is not an add-instance failure. The core's RAM remains 0xFF. */
+        SRAM_readNamed(slot_save_name[slot], sram, size);
+    }
+    return 1;
 }
 
 int LLMinarch_addNextPath(const char *path, unsigned *slot_out) {
@@ -95,7 +154,14 @@ int LLMinarch_switchNext(void) {
 int LLMinarch_remove(unsigned slot) {
     if (!LLMinarch_supported() || slot >= LOCAL_LINK_MAX_PLAYERS) return 0;
     if (!(LLMinarch_loadedMask() & (1u << slot))) return 0;
-    return core.local_link_remove_instance(slot) ? 1 : 0;
+
+    /* Never throw away a live instance if its battery save could not be
+     * persisted. Let the user remain in the session and surface an error. */
+    if (!LLMinarch_saveSlot(slot)) return 0;
+    if (!core.local_link_remove_instance(slot)) return 0;
+
+    slot_save_name[slot][0] = '\0';
+    return 1;
 }
 
 int LLMinarch_removeActive(void) {
@@ -256,7 +322,7 @@ int LLMinarch_menuRemove(MenuList *list, int index) {
 
     unsigned player = LLMinarch_activeSlot() + 1;
     if (!LLMinarch_removeActive()) {
-        Menu_message("Could not remove the active instance.", (char*[]){ "B", "BACK", NULL });
+        Menu_message("Could not save/remove the active instance.", (char*[]){ "B", "BACK", NULL });
         return MENU_CALLBACK_NOP;
     }
 

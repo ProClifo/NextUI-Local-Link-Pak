@@ -13,6 +13,8 @@ int LLMinarch_addPath(unsigned slot, const char *path);
 int LLMinarch_addNextPath(const char *path, unsigned *slot_out);
 int LLMinarch_switchTo(unsigned slot);
 int LLMinarch_switchNext(void);
+int LLMinarch_saveSlot(unsigned slot);
+int LLMinarch_saveAll(void);
 int LLMinarch_remove(unsigned slot);
 int LLMinarch_removeActive(void);
 
