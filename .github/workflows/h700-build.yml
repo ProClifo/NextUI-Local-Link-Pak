@@ -1,0 +1,77 @@
+name: H700 Test Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-h700:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/loveretro/h700-toolchain:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        shell: bash
+        run: |
+          set -euxo pipefail
+          echo "CROSS_COMPILE=${CROSS_COMPILE:-}"
+          echo "CROSS_TRIPLE=${CROSS_TRIPLE:-}"
+          echo "PREFIX=${PREFIX:-}"
+          echo "PREFIX_LOCAL=${PREFIX_LOCAL:-}"
+          ${CROSS_COMPILE}gcc --version | head -1
+
+      - name: Prepare NextUI
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git clone --depth 1 https://github.com/LoveRetro/NextUI.git /tmp/NextUI
+          python3 scripts/apply_nextui.py /tmp/NextUI
+          git -C /tmp/NextUI diff --check
+
+      - name: Build Local-Link MinArch for h700
+        shell: bash
+        run: |
+          set -euxo pipefail
+          make -C /tmp/NextUI/workspace/all/minarch PLATFORM=h700 -j2
+          test -f /tmp/NextUI/workspace/all/minarch/build/h700/minarch.elf
+          file /tmp/NextUI/workspace/all/minarch/build/h700/minarch.elf
+
+      - name: Prepare pinned mGBA
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git clone https://github.com/libretro/mgba.git /tmp/mgba
+          git -C /tmp/mgba checkout 925f0f0bc1f51c79ca5446d7427512c653e615b3
+          python3 scripts/prepare_mgba.py /tmp/mgba
+          git -C /tmp/mgba diff --check
+
+      - name: Build Local-Link mGBA for h700
+        shell: bash
+        run: |
+          set -euxo pipefail
+          make -C /tmp/mgba -f Makefile.libretro NEXTUI_LOCAL_LINK=1 platform=tg5040 -j2
+          test -f /tmp/mgba/mgba_libretro.so
+          file /tmp/mgba/mgba_libretro.so
+          ${CROSS_COMPILE}readelf -Ws /tmp/mgba/mgba_libretro.so | grep retro_local_link_get_abi_version
+
+      - name: Package testable GBA.pak
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p dist
+          python3 scripts/package_pak.py \
+            --platform h700 \
+            --minarch /tmp/NextUI/workspace/all/minarch/build/h700/minarch.elf \
+            --core /tmp/mgba/mgba_libretro.so \
+            --output dist/NextUI-Local-Link-RG-SP-test.zip
+          unzip -l dist/NextUI-Local-Link-RG-SP-test.zip
+
+      - name: Upload RG SP test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: NextUI-Local-Link-RG-SP-test
+          path: dist/NextUI-Local-Link-RG-SP-test.zip
+          if-no-files-found: error
