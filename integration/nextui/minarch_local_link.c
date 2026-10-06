@@ -11,9 +11,9 @@
 #include <strings.h>
 #include <sys/stat.h>
 
-/* The basename/alt-name used by NextUI's normal SRAM naming rules for each
- * fixed Local Link slot. P1 is populated from game.alt_name; P2-P4 are the
- * selected ROM basenames. */
+/* The basename/alt-name used by NextUI's normal SRAM/state naming rules for
+ * each fixed Local Link slot. P1 is populated from game.alt_name; P2-P4 are
+ * the selected ROM basenames. */
 static char slot_save_name[LOCAL_LINK_MAX_PLAYERS][MAX_PATH];
 
 static void remember_primary_name(void) {
@@ -40,6 +40,14 @@ static int abi_valid(void) {
            core.local_link_get_memory_data &&
            core.local_link_get_memory_size &&
            core.local_link_get_abi_version() == LOCAL_LINK_ABI_VERSION;
+}
+
+static int state_abi_valid(void) {
+    if (!abi_valid()) return 0;
+    if (!(core.local_link_get_capabilities() & LOCAL_LINK_CAP_PER_PLAYER_STATE)) return 0;
+    return core.local_link_serialize_size &&
+           core.local_link_serialize &&
+           core.local_link_unserialize;
 }
 
 int LLMinarch_supported(void) {
@@ -84,7 +92,7 @@ int LLMinarch_saveSlot(unsigned slot) {
 
     void *sram = core.local_link_get_memory_data(slot, RETRO_MEMORY_SAVE_RAM);
     size_t size = core.local_link_get_memory_size(slot, RETRO_MEMORY_SAVE_RAM);
-    if (!sram || !size) return 1; /* game has no battery-backed RAM */
+    if (!sram || !size) return 1;
 
     return SRAM_writeNamed(slot_save_name[slot], sram, size);
 }
@@ -96,6 +104,40 @@ int LLMinarch_saveAll(void) {
     for (unsigned slot = 0; slot < LOCAL_LINK_MAX_PLAYERS; ++slot) {
         if ((mask & (1u << slot)) && !LLMinarch_saveSlot(slot)) ok = 0;
     }
+    return ok;
+}
+
+int LLMinarch_saveStateSlot(unsigned slot, int state_slot) {
+    if (!state_abi_valid() || slot >= LOCAL_LINK_MAX_PLAYERS) return 0;
+    if (!(LLMinarch_loadedMask() & (1u << slot))) return 0;
+    if (slot == 0) remember_primary_name();
+    if (!slot_save_name[slot][0]) return 0;
+
+    size_t size = core.local_link_serialize_size(slot);
+    if (!size) return 0;
+    void *state = malloc(size);
+    if (!state) return 0;
+
+    int ok = core.local_link_serialize(slot, state, size) &&
+             State_writeNamed(slot_save_name[slot], state_slot, state, size);
+    free(state);
+    return ok;
+}
+
+int LLMinarch_loadStateSlot(unsigned slot, int state_slot) {
+    if (!state_abi_valid() || slot >= LOCAL_LINK_MAX_PLAYERS) return 0;
+    if (!(LLMinarch_loadedMask() & (1u << slot))) return 0;
+    if (slot == 0) remember_primary_name();
+    if (!slot_save_name[slot][0]) return 0;
+
+    size_t size = core.local_link_serialize_size(slot);
+    if (!size) return 0;
+    void *state = calloc(1, size);
+    if (!state) return 0;
+
+    int ok = State_readNamed(slot_save_name[slot], state_slot, state, size) &&
+             core.local_link_unserialize(slot, state, size);
+    free(state);
     return ok;
 }
 
@@ -122,7 +164,6 @@ int LLMinarch_addPath(unsigned slot, const char *path) {
 
 int LLMinarch_addNextPath(const char *path, unsigned *slot_out) {
     uint32_t mask = LLMinarch_loadedMask();
-    /* Slot 0 is P1, loaded by normal retro_load_game(). Fill P2-P4 in order. */
     for (unsigned slot = 1; slot < LOCAL_LINK_MAX_PLAYERS; ++slot) {
         if (!(mask & (1u << slot))) {
             if (!LLMinarch_addPath(slot, path)) return 0;
@@ -155,8 +196,6 @@ int LLMinarch_remove(unsigned slot) {
     if (!LLMinarch_supported() || slot >= LOCAL_LINK_MAX_PLAYERS) return 0;
     if (!(LLMinarch_loadedMask() & (1u << slot))) return 0;
 
-    /* Never throw away a live instance if its battery save could not be
-     * persisted. Let the user remain in the session and surface an error. */
     if (!LLMinarch_saveSlot(slot)) return 0;
     if (!core.local_link_remove_instance(slot)) return 0;
 
@@ -166,6 +205,18 @@ int LLMinarch_remove(unsigned slot) {
 
 int LLMinarch_removeActive(void) {
     return LLMinarch_remove(LLMinarch_activeSlot());
+}
+
+int LLMinarch_saveAndRemoveActive(void) {
+    if (!LLMinarch_supported()) return 0;
+    unsigned slot = LLMinarch_activeSlot();
+    if (!(LLMinarch_loadedMask() & (1u << slot))) return 0;
+
+    if (!LLMinarch_saveSlot(slot)) return 0;
+    if (!LLMinarch_saveStateSlot(slot, AUTO_RESUME_SLOT)) return 0;
+    if (!core.local_link_remove_instance(slot)) return 0;
+    slot_save_name[slot][0] = '\0';
+    return 1;
 }
 
 struct PickerEntry {
@@ -228,13 +279,54 @@ static int picker_add(const char *directory, const char *filename) {
     return 1;
 }
 
+/* For now the ROM list uses A to choose the game and then asks how to start
+ * the new physical GBA. This keeps the semantics identical to NextUI's normal
+ * A=start / X=resume behavior without modifying the generic MenuList API. */
+static int picker_start_mode(const char *name) {
+    GFX_setMode(MODE_MAIN);
+    int dirty = 1;
+    for (;;) {
+        GFX_startFrame();
+        PAD_poll();
+        if (PAD_justPressed(BTN_A)) { GFX_setMode(MODE_MENU); return 0; }
+        if (PAD_justPressed(BTN_X)) { GFX_setMode(MODE_MENU); return 1; }
+        if (PAD_justPressed(BTN_B)) { GFX_setMode(MODE_MENU); return -1; }
+
+        PWR_update(&dirty, NULL, Menu_beforeSleep, Menu_afterSleep);
+        GFX_clear(screen);
+        char message[MAX_PATH + 64];
+        snprintf(message, sizeof(message), "%s\n\nStart this linked GBA from its battery save, or resume its auto save state?", name);
+        GFX_blitMessage(font.medium, message, screen,
+            &(SDL_Rect){SCALE1(PADDING), SCALE1(PADDING),
+                        screen->w - SCALE1(2 * PADDING),
+                        screen->h - SCALE1(PILL_SIZE + PADDING)});
+        GFX_blitButtonGroup((char*[]){ "A", "START", "X", "RESUME", "B", "BACK", NULL },
+                            0, screen, 1);
+        GFX_flip(screen);
+        dirty = 0;
+        hdmimon();
+    }
+}
+
 static int picker_confirm(MenuList *list, int index) {
     (void) list;
     if (index < 0 || (size_t) index >= picker_count) return MENU_CALLBACK_NOP;
 
+    int resume = picker_start_mode(picker_entries[index].name);
+    if (resume < 0) return MENU_CALLBACK_NOP;
+
     unsigned slot = 0;
     if (!LLMinarch_addNextPath(picker_entries[index].path, &slot)) {
         Menu_message("Could not add this GBA instance.", (char*[]){ "B", "BACK", NULL });
+        return MENU_CALLBACK_NOP;
+    }
+
+    if (resume && !LLMinarch_loadStateSlot(slot, AUTO_RESUME_SLOT)) {
+        /* Do not silently fall back to battery save when the user explicitly
+         * chose X/Resume. Remove the just-created instance and let them retry. */
+        LLMinarch_remove(slot);
+        Menu_message("No usable resume state was found for this game.",
+                     (char*[]){ "B", "BACK", NULL });
         return MENU_CALLBACK_NOP;
     }
 
