@@ -40,13 +40,14 @@ fi
 git -C "$MGBA_DIR" checkout --detach "$MGBA_REV"
 
 python3 "$PROJECT_DIR/scripts/apply_nextui.py" "$NEXTUI_DIR"
+python3 "$PROJECT_DIR/scripts/integrate_tool_mode.py" "$NEXTUI_DIR"
 python3 "$PROJECT_DIR/scripts/prepare_mgba.py" "$MGBA_DIR"
 printf 'local-link-test\n' > "$NEXTUI_DIR/workspace/hash.txt"
 
 echo "==> Pulling h700 toolchain"
 docker pull "$TOOLCHAIN_IMAGE"
 
-echo "==> Building Local-Link MinArch"
+echo "==> Building picker-enabled Local-Link MinArch"
 docker run --rm \
     -v "$NEXTUI_DIR:/src/NextUI" \
     -w /src/NextUI/workspace/all/minarch \
@@ -79,7 +80,7 @@ if command -v readelf >/dev/null 2>&1; then
     }
 fi
 
-echo "==> Packaging $OUTPUT"
+echo "==> Packaging dedicated Tool Pak: $OUTPUT"
 rm -f "$OUTPUT"
 python3 "$PROJECT_DIR/scripts/package_pak.py" \
     --platform h700 \
@@ -89,4 +90,5 @@ python3 "$PROJECT_DIR/scripts/package_pak.py" \
 
 echo
 echo "Built: $OUTPUT"
-echo "Install by extracting the ZIP at the root of the NextUI SD card."
+echo "Install by extracting at the NextUI SD-card root."
+echo "This installs Tools/h700/Local Link.pak and leaves Emus/h700/GBA.pak untouched."
