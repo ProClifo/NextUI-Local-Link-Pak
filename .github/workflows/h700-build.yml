@@ -29,6 +29,7 @@ jobs:
           set -euxo pipefail
           git clone --depth 1 https://github.com/LoveRetro/NextUI.git /tmp/NextUI
           python3 scripts/apply_nextui.py /tmp/NextUI
+          python3 scripts/integrate_tool_mode.py /tmp/NextUI
           git -C /tmp/NextUI diff --check
           printf 'local-link-test\n' > /tmp/NextUI/workspace/hash.txt
 
@@ -36,8 +37,8 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          # MinArch's dependency bootstrap clones/builds libretro-common and is
-          # not safe to start in parallel on a completely clean checkout.
+          # MinArch's dependency bootstrap is not safe to start in parallel on
+          # a completely clean checkout.
           make -C /tmp/NextUI/workspace/all/minarch PLATFORM=h700 -j1
           test -f /tmp/NextUI/workspace/all/minarch/build/h700/minarch.elf
           file /tmp/NextUI/workspace/all/minarch/build/h700/minarch.elf
@@ -60,7 +61,7 @@ jobs:
           file /tmp/mgba/mgba_libretro.so
           ${CROSS_COMPILE}readelf -Ws /tmp/mgba/mgba_libretro.so | grep retro_local_link_get_abi_version
 
-      - name: Package testable GBA.pak
+      - name: Package Local Link Tool Pak
         shell: bash
         run: |
           set -euxo pipefail
@@ -71,6 +72,13 @@ jobs:
             --core /tmp/mgba/mgba_libretro.so \
             --output dist/NextUI-Local-Link-RG-SP-test.zip
           unzip -l dist/NextUI-Local-Link-RG-SP-test.zip
+          unzip -l dist/NextUI-Local-Link-RG-SP-test.zip | grep 'Tools/h700/Local Link.pak/launch.sh'
+          unzip -l dist/NextUI-Local-Link-RG-SP-test.zip | grep 'Tools/h700/Local Link.pak/minarch-local-link.elf'
+          unzip -l dist/NextUI-Local-Link-RG-SP-test.zip | grep 'Tools/h700/Local Link.pak/mgba_local_link_libretro.so'
+          if unzip -l dist/NextUI-Local-Link-RG-SP-test.zip | grep -q 'Emus/h700/GBA.pak'; then
+            echo 'ERROR: Tool Pak archive must not replace normal GBA.pak' >&2
+            exit 1
+          fi
 
       - name: Upload RG SP test build
         uses: actions/upload-artifact@v4
