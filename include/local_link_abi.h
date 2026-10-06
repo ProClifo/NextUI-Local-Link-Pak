@@ -15,15 +15,20 @@ extern "C" {
 #define LOCAL_LINK_MAX_PLAYERS 4u
 
 /* Optional libretro extension implemented by the Local Link mGBA core.
- * Slots are zero-based here (0..3) and correspond directly to GBA cable IDs.
- * The UI presents them as Player 1..Player 4. */
-
+ * Slots are zero-based here (0..3). A slot is a stable Local Link identity used
+ * for ROM/save/state ownership and presented as Player 1..Player 4 in the UI.
+ *
+ * Important: a stable slot is not automatically the same thing as a sticky GBA
+ * multiplayer cable ID after another powered-on console disappears. Stock mGBA
+ * lockstep compacts its transport player IDs. Sticky cable IDs are therefore a
+ * separate capability and must not be inferred from FIXED_SLOT_ID. */
 enum LocalLinkCapability {
-    LOCAL_LINK_CAP_ADD_REMOVE       = 1u << 0,
-    LOCAL_LINK_CAP_ACTIVE_INSTANCE  = 1u << 1,
-    LOCAL_LINK_CAP_PER_PLAYER_RAM   = 1u << 2,
-    LOCAL_LINK_CAP_PER_PLAYER_STATE = 1u << 3,
-    LOCAL_LINK_CAP_FIXED_PLAYER_ID  = 1u << 4,
+    LOCAL_LINK_CAP_ADD_REMOVE        = 1u << 0,
+    LOCAL_LINK_CAP_ACTIVE_INSTANCE   = 1u << 1,
+    LOCAL_LINK_CAP_PER_PLAYER_RAM    = 1u << 2,
+    LOCAL_LINK_CAP_PER_PLAYER_STATE  = 1u << 3,
+    LOCAL_LINK_CAP_FIXED_SLOT_ID     = 1u << 4,
+    LOCAL_LINK_CAP_STICKY_CABLE_ID   = 1u << 5,
 };
 
 typedef unsigned (*local_link_get_abi_version_t)(void);
