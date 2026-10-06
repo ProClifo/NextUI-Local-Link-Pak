@@ -61,14 +61,14 @@ diff --git a/workspace/all/minarch/ma_saves.c b/workspace/all/minarch/ma_saves.c
 +
 +	char filename[MAX_PATH];
 +	State_getPathForName(alt_name, slot, filename);
-+	uint8_t rastate_header[RASTATE_HEADER_SIZE] = {0};
++	uint8_t rastate_header[16] = {0};
 +	int success = 0;
 +
 +#ifdef HAS_SRM
 +	rzipstream_t* file = rzipstream_open(filename, RETRO_VFS_FILE_ACCESS_READ);
 +	if (!file) return 0;
-+	int64_t header_bytes = rzipstream_read(file, rastate_header, RASTATE_HEADER_SIZE);
-+	if (header_bytes < RASTATE_HEADER_SIZE) goto named_read_done;
++	int64_t header_bytes = rzipstream_read(file, rastate_header, sizeof(rastate_header));
++	if (header_bytes < (int64_t)sizeof(rastate_header)) goto named_read_done;
 +	if (memcmp(rastate_header, "RASTATE", 7) != 0) rzipstream_rewind(file);
 +	{
 +		int64_t bytes = rzipstream_read(file, state, state_size);
@@ -79,8 +79,8 @@ diff --git a/workspace/all/minarch/ma_saves.c b/workspace/all/minarch/ma_saves.c
 +#else
 +	FILE* file = fopen(filename, "r");
 +	if (!file) return 0;
-+	size_t header_bytes = fread(rastate_header, 1, RASTATE_HEADER_SIZE, file);
-+	if (header_bytes < RASTATE_HEADER_SIZE) goto named_read_done;
++	size_t header_bytes = fread(rastate_header, 1, sizeof(rastate_header), file);
++	if (header_bytes < sizeof(rastate_header)) goto named_read_done;
 +	if (memcmp(rastate_header, "RASTATE", 7) != 0) fseek(file, 0, SEEK_SET);
 +	{
 +		size_t bytes = fread(state, 1, state_size, file);
