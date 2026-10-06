@@ -1,11 +1,11 @@
-#ifndef LOCAL_LINK_SESSION_H
-#define LOCAL_LINK_SESSION_H
+#ifndef NEXTUI_LOCAL_LINK_SESSION_H
+#define NEXTUI_LOCAL_LINK_SESSION_H
 
 #include <stdbool.h>
 #include <stddef.h>
 
 #define LL_MAX_PLAYERS 4
-#define LL_PATH_MAX 512
+#define LL_PATH_MAX 1024
 
 typedef enum {
     LL_OK = 0,
@@ -18,8 +18,8 @@ typedef enum {
 } LLResult;
 
 typedef struct {
+    unsigned player_id;
     bool occupied;
-    unsigned player_id;      /* Fixed hardware/link identity: 1..4. */
     char rom_path[LL_PATH_MAX];
 } LLSlot;
 
@@ -32,7 +32,7 @@ typedef struct {
 
 typedef struct {
     LLSlot slots[LL_MAX_PLAYERS];
-    unsigned active_player_id; /* 0 when session is empty. */
+    unsigned active_player_id;
     LLBackend backend;
     void *backend_userdata;
 } LLSession;
@@ -46,8 +46,8 @@ LLResult ll_session_add(LLSession *session, unsigned player_id, const char *rom_
 LLResult ll_session_add_next(LLSession *session, const char *rom_path, unsigned *player_id_out);
 LLResult ll_session_switch(LLSession *session, unsigned player_id);
 LLResult ll_session_switch_next(LLSession *session);
-LLResult ll_session_quit_active(LLSession *session, bool save_first);
 LLResult ll_session_remove(LLSession *session, unsigned player_id, bool save_first);
+LLResult ll_session_quit_active(LLSession *session, bool save_first);
 const LLSlot *ll_session_get_slot(const LLSession *session, unsigned player_id);
 const char *ll_result_string(LLResult result);
 

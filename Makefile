@@ -1,20 +1,27 @@
 CC ?= cc
 CFLAGS ?= -std=c11 -Wall -Wextra -Werror -pedantic -O2
-CPPFLAGS ?= -Isrc
+CPPFLAGS ?= -Iinclude
 
-TEST_BIN := build/test_session
-TEST_SRCS := src/session.c tests/test_session.c
+BUILD := build
+SESSION_TEST := $(BUILD)/test_session
+BACKEND_TEST := $(BUILD)/test_backend_stub
 
 .PHONY: all test clean
 
 all: test
 
-$(TEST_BIN): $(TEST_SRCS) src/session.h
-	mkdir -p build
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(TEST_SRCS) -o $(TEST_BIN)
+test: $(SESSION_TEST) $(BACKEND_TEST)
+	$(SESSION_TEST)
+	$(BACKEND_TEST)
 
-test: $(TEST_BIN)
-	./$(TEST_BIN)
+$(BUILD):
+	mkdir -p $(BUILD)
+
+$(SESSION_TEST): src/session.c tests/test_session.c include/session.h | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) src/session.c tests/test_session.c -o $@
+
+$(BACKEND_TEST): src/session.c src/mgba_backend_stub.c tests/test_backend_stub.c include/session.h include/mgba_backend.h | $(BUILD)
+	$(CC) $(CPPFLAGS) $(CFLAGS) src/session.c src/mgba_backend_stub.c tests/test_backend_stub.c -o $@
 
 clean:
-	rm -rf build
+	rm -rf $(BUILD)

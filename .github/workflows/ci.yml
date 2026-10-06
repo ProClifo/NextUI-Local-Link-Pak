@@ -8,8 +8,6 @@ jobs:
   host-tests:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Build and run session tests
+      - uses: actions/checkout@v4
+      - name: Build and run tests
         run: make test
