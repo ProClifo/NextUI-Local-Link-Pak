@@ -1,15 +1,6 @@
 #!/bin/sh
 set -eu
 
-# Reproducible h700 build for NextUI Local Link.
-# Requires Docker (or another runtime exposing the Docker CLI).
-#
-# Output:
-#   dist/NextUI-Local-Link-h700.zip
-#
-# The archive is a drop-in Emus/h700/GBA.pak override. It does not modify
-# NextUI's hidden .system directory and it keeps the normal GBA ROM tag.
-
 PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 BUILD_DIR=${BUILD_DIR:-"$PROJECT_DIR/build/h700"}
 DIST_DIR=${DIST_DIR:-"$PROJECT_DIR/dist"}
@@ -50,6 +41,7 @@ git -C "$MGBA_DIR" checkout --detach "$MGBA_REV"
 
 python3 "$PROJECT_DIR/scripts/apply_nextui.py" "$NEXTUI_DIR"
 python3 "$PROJECT_DIR/scripts/prepare_mgba.py" "$MGBA_DIR"
+printf 'local-link-test\n' > "$NEXTUI_DIR/workspace/hash.txt"
 
 echo "==> Pulling h700 toolchain"
 docker pull "$TOOLCHAIN_IMAGE"
@@ -59,7 +51,7 @@ docker run --rm \
     -v "$NEXTUI_DIR:/src/NextUI" \
     -w /src/NextUI/workspace/all/minarch \
     "$TOOLCHAIN_IMAGE" \
-    sh -lc 'make PLATFORM=h700 -j"$(nproc)"'
+    sh -lc 'make PLATFORM=h700 -j1'
 
 MINARCH="$NEXTUI_DIR/workspace/all/minarch/build/h700/minarch.elf"
 [ -f "$MINARCH" ] || {
@@ -80,7 +72,6 @@ CORE="$MGBA_DIR/mgba_libretro.so"
     exit 1
 }
 
-# Fail early if the custom core was accidentally built as ordinary mGBA.
 if command -v readelf >/dev/null 2>&1; then
     readelf -Ws "$CORE" | grep -q 'retro_local_link_get_abi_version' || {
         echo "error: built mGBA core does not export Local Link ABI" >&2
