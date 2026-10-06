@@ -14,7 +14,7 @@ struct LLMgbaBackend {
     unsigned active_player;
 };
 
-static struct StubInstance *instance_mut(LLMgaBackend *backend, unsigned player_id) {
+static struct StubInstance *instance_mut(LLMgbaBackend *backend, unsigned player_id) {
     if (!backend || player_id < 1 || player_id > LL_MAX_PLAYERS) {
         return NULL;
     }
@@ -40,10 +40,8 @@ static LLResult stub_load(unsigned player_id, const char *rom_path, void *userda
 
     memset(instance, 0, sizeof(*instance));
     instance->loaded = true;
-    strncpy(instance->rom_path, rom_path, sizeof(instance->rom_path) - 1);
+    snprintf(instance->rom_path, sizeof(instance->rom_path), "%s", rom_path);
 
-    /* Temporary visual marker so the frontend can exercise per-instance rendering
-     * before libmgba is linked in. Each player gets a different grayscale level. */
     uint32_t shade = 0xFF000000u | (0x303030u * player_id);
     for (size_t i = 0; i < LL_GBA_WIDTH * LL_GBA_HEIGHT; ++i) {
         instance->framebuffer[i] = shade;
@@ -88,11 +86,11 @@ static const LLBackend BACKEND = {
     .set_active_instance = stub_set_active,
 };
 
-LLMgaBackend *ll_mgba_backend_create(void) {
-    return calloc(1, sizeof(LLMgaBackend));
+LLMgbaBackend *ll_mgba_backend_create(void) {
+    return calloc(1, sizeof(LLMgbaBackend));
 }
 
-void ll_mgba_backend_destroy(LLMgaBackend *backend) {
+void ll_mgba_backend_destroy(LLMgbaBackend *backend) {
     free(backend);
 }
 
@@ -100,7 +98,7 @@ const LLBackend *ll_mgba_backend_interface(void) {
     return &BACKEND;
 }
 
-LLResult ll_mgba_backend_run_frame(LLMgaBackend *backend,
+LLResult ll_mgba_backend_run_frame(LLMgbaBackend *backend,
                                    const uint32_t keys[LL_MAX_PLAYERS]) {
     (void) keys;
     return backend ? LL_OK : LL_ERR_INVALID_ARGUMENT;
