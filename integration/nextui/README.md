@@ -18,13 +18,13 @@ Local Link is exposed as an **optional libretro extension ABI**. MinArch still l
 
 ## Integrating into NextUI
 
-Use the repository's idempotent integration script against a clean NextUI checkout:
+Use the repository's idempotent entry point against a clean NextUI checkout:
 
 ```sh
-python3 scripts/integrate_nextui.py /path/to/NextUI
+python3 scripts/apply_nextui.py /path/to/NextUI
 ```
 
-The script:
+`apply_nextui.py` tolerates harmless upstream formatting differences, then delegates the structural work to the strict `integrate_nextui.py` implementation. The integration:
 
 - copies `minarch_local_link.c/.h` and `local_link_abi.h` into MinArch,
 - adds the helper to MinArch's build,
@@ -33,6 +33,4 @@ The script:
 - injects Local Link actions into `Options > Emulator`,
 - changes Quit / Save & Quit to per-instance behavior while peers remain.
 
-It uses exact upstream source anchors and intentionally fails if an expected anchor changes. CI runs the script twice against the current `LoveRetro/NextUI` main branch to check both compatibility and idempotency.
-
-The old hand-written patch files were removed because they were too easy to become stale or partially applicable as NextUI changes; the integration script is now the canonical source of the MinArch modifications.
+The structural integration uses exact upstream source anchors and intentionally fails if an expected API/code shape changes. CI runs the entry point twice against current `LoveRetro/NextUI` main to check compatibility and idempotency.
