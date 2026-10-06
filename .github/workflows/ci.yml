@@ -35,7 +35,6 @@ jobs:
             set -eux
             git clone --depth 1 https://github.com/LoveRetro/NextUI.git /tmp/NextUI
             python3 scripts/apply_nextui.py /tmp/NextUI
-            # It must be safe to run twice (important for iterative device builds).
             python3 scripts/apply_nextui.py /tmp/NextUI
             git -C /tmp/NextUI diff --check
             grep -q 'minarch_local_link.c' /tmp/NextUI/workspace/all/minarch/makefile
@@ -49,3 +48,33 @@ jobs:
         with:
           name: nextui-integration-log
           path: nextui-integration.log
+
+  mgba-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare and build Local Link mGBA core
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            set -eux
+            python3 -m py_compile scripts/prepare_mgba.py
+            git clone https://github.com/libretro/mgba.git /tmp/mgba
+            git -C /tmp/mgba checkout 925f0f0bc1f51c79ca5446d7427512c653e615b3
+            python3 scripts/prepare_mgba.py /tmp/mgba
+            python3 scripts/prepare_mgba.py /tmp/mgba
+            git -C /tmp/mgba diff --check
+            grep -q 'src/gba/sio/lockstep.c' /tmp/mgba/libretro-build/Makefile.common
+            grep -q 'NEXTUI_LOCAL_LINK' /tmp/mgba/libretro-build/Makefile.common
+            make -C /tmp/mgba -f Makefile.libretro NEXTUI_LOCAL_LINK=1 platform=unix -j2
+            test -f /tmp/mgba/mgba_libretro.so
+            nm -D --defined-only /tmp/mgba/mgba_libretro.so | grep -q retro_local_link_get_abi_version
+            nm -D --defined-only /tmp/mgba/mgba_libretro.so | grep -q retro_local_link_add_instance
+          } 2>&1 | tee mgba-core.log
+      - name: Upload mGBA build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mgba-core-log
+          path: mgba-core.log
