@@ -83,7 +83,7 @@ def integrate(nextui: Path, project: Path) -> None:
 \t * emulator launches still pass argv[2] and bypass this picker entirely. */
 \tif (!rom_path[0]) {
 \t\tconst char *rom_dir = getenv("LOCAL_LINK_ROM_DIR");
-\t\tif (!rom_dir || !rom_dir[0]) rom_dir = ROMS_PATH "/Game Boy Advance (GBA)";
+\t\tif (!rom_dir || !rom_dir[0]) rom_dir = ROMS_PATH "/Game Boy Advance (MGBA)";
 \t\tif (!LLPicker_pickFirstRom(rom_dir, rom_path, sizeof(rom_path))) {
 \t\t\tIMG_Quit();
 \t\t\tMSG_quit();
