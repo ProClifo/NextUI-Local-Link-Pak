@@ -7,11 +7,10 @@ PAK_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 MINARCH="$PAK_DIR/minarch-local-link.elf"
 CORE="$PAK_DIR/mgba_local_link_libretro.so"
 
-# Keep all Tool-Pak paths explicit so the launcher does not depend on optional
-# environment variables being populated by NextUI.
-SD_ROOT="${SDCARD_PATH:-/mnt/SDCARD}"
-LOG_DIR="${LOGS_PATH:-$SD_ROOT/Logs}"
+# Match NextUI's normal h700 userdata/log layout used by the other paks.
+SD_ROOT="${SDCARD_PATH:-/mnt/sdcard}"
 USERDATA_DIR="${USERDATA_PATH:-$SD_ROOT/.userdata/h700}"
+LOG_DIR="$USERDATA_DIR/logs"
 
 mkdir -p "$LOG_DIR" "$USERDATA_DIR"
 
